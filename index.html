@@ -483,16 +483,16 @@ function renderTrades() {
       pnlHtml = `<span class="${pnlColor}" style="font-size:13px;font-weight:700;font-family:var(--mono);">${pnlSign}${fmt(Math.round(pnl))}원</span>`;
     }
 
-    return \`<div class="trade-card">
+    return `<div class="trade-card">
       <div class="trade-top">
-        <div class="trade-name">\${t.name} \${badge}</div>
-        <div>\${pnlHtml}</div>
+        <div class="trade-name">${t.name} ${badge}</div>
+        <div>${pnlHtml}</div>
       </div>
       <div class="trade-bottom">
-        <div class="trade-meta">\${t.date} · \${fmt(t.qty)}주 · @\${fmt(t.price)}원</div>
-        <div class="trade-cashflow \${cashColor}">현금흐름 : \${cashSign}\${fmt(t.amount)}원</div>
+        <div class="trade-meta">${t.date} · ${fmt(t.qty)}주 · @${fmt(t.price)}원</div>
+        <div class="trade-cashflow ${cashColor}">현금흐름 : ${cashSign}${fmt(t.amount)}원</div>
       </div>
-    </div>\`;
+    </div>`;
   }).join('');
 }
 
