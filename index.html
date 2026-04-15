@@ -115,11 +115,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;}
 .filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .filter-select{padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;outline:none;}
-.trade-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
-.trade-left .trade-name{font-size:14px;font-weight:600;margin-bottom:3px;}
-.trade-left .trade-meta{font-size:11px;color:var(--muted);font-family:var(--mono);}
-.trade-right{text-align:right;}
-.trade-amt{font-size:14px;font-weight:700;font-family:var(--mono);}
+.trade-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:8px;}
+.trade-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.trade-name{font-size:14px;font-weight:600;}
+.trade-pnl{font-size:14px;font-weight:700;font-family:var(--mono);}
+.trade-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid var(--border);}
+.trade-meta{font-size:11px;color:var(--muted);font-family:var(--mono);}
+.trade-cashflow{font-size:11px;font-family:var(--mono);font-weight:500;}
 .trade-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-left:6px;}
 .badge-buy{background:rgba(34,197,94,0.15);color:var(--green);}
 .badge-sell{background:rgba(239,68,68,0.15);color:var(--red);}
@@ -431,22 +433,66 @@ function renderTrades() {
     return;
   }
 
+  // 종목별 평균 매수단가 계산 (매도 손익 계산용)
+  const avgBuyPrice = {};
+  const buyQtyMap   = {};
+  // 날짜순으로 정렬한 전체 거래로 평균단가 계산
+  const allSorted = [...trades].sort((a,b) => a.date.localeCompare(b.date));
+  allSorted.forEach(t => {
+    if (!avgBuyPrice[t.name]) { avgBuyPrice[t.name] = 0; buyQtyMap[t.name] = 0; }
+    if (t.type === '매수') {
+      const prevTotal = avgBuyPrice[t.name] * buyQtyMap[t.name];
+      buyQtyMap[t.name]   += t.qty;
+      avgBuyPrice[t.name]  = (prevTotal + t.price * t.qty) / buyQtyMap[t.name];
+    } else if (t.type === '매도') {
+      buyQtyMap[t.name] = Math.max(0, (buyQtyMap[t.name] || 0) - t.qty);
+    }
+  });
+
   el.innerHTML = filtered.map(t => {
     const isBuy = t.type === '매수';
     const badge = isBuy
       ? '<span class="trade-badge badge-buy">매수</span>'
       : '<span class="trade-badge badge-sell">매도</span>';
-    const amtColor = isBuy ? 'down' : 'up';
-    const amtSign  = isBuy ? '-' : '+';
-    return `<div class="trade-card">
-      <div class="trade-left">
-        <div class="trade-name">${t.name} ${badge}</div>
-        <div class="trade-meta">${t.date} · ${fmt(t.qty)}주 · @${fmt(t.price)}원</div>
+
+    // 현금흐름: 매수 = 마이너스, 매도 = 플러스
+    const cashSign  = isBuy ? '-' : '+';
+    const cashColor = isBuy ? 'down' : 'up';
+
+    // 손익 (매도 시만 계산)
+    let pnlHtml = '';
+    if (!isBuy) {
+      // 해당 거래 시점의 평균 매수단가 계산
+      let avgPrice = 0;
+      let qtyAcc = 0;
+      const allS = [...trades].sort((a,b) => a.date.localeCompare(b.date));
+      for (const tr of allS) {
+        if (tr.name !== t.name) continue;
+        if (tr.date > t.date) break;
+        if (tr === t) break;
+        if (tr.type === '매수') {
+          avgPrice = (avgPrice * qtyAcc + tr.price * tr.qty) / (qtyAcc + tr.qty);
+          qtyAcc += tr.qty;
+        } else {
+          qtyAcc = Math.max(0, qtyAcc - tr.qty);
+        }
+      }
+      const pnl = avgPrice > 0 ? (t.price - avgPrice) * t.qty : 0;
+      const pnlSign  = pnl >= 0 ? '+' : '';
+      const pnlColor = pnl >= 0 ? 'up' : 'down';
+      pnlHtml = `<span class="${pnlColor}" style="font-size:13px;font-weight:700;font-family:var(--mono);">${pnlSign}${fmt(Math.round(pnl))}원</span>`;
+    }
+
+    return \`<div class="trade-card">
+      <div class="trade-top">
+        <div class="trade-name">\${t.name} \${badge}</div>
+        <div>\${pnlHtml}</div>
       </div>
-      <div class="trade-right">
-        <div class="trade-amt ${amtColor}">${amtSign}${fmt(t.amount)}원</div>
+      <div class="trade-bottom">
+        <div class="trade-meta">\${t.date} · \${fmt(t.qty)}주 · @\${fmt(t.price)}원</div>
+        <div class="trade-cashflow \${cashColor}">현금흐름 : \${cashSign}\${fmt(t.amount)}원</div>
       </div>
-    </div>`;
+    </div>\`;
   }).join('');
 }
 
