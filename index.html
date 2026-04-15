@@ -354,12 +354,12 @@ function renderHoldings() {
     return `<div class="stock-card ${cardCls}">
       <div class="stock-row">
         <div><div class="stock-name">${s.name}</div><div class="stock-meta">${s.code} · ${s.market} · ${fmt(s.qty)}주</div></div>
-        <div class="stock-price"><div class="stock-current">${fmt(s.curPrice)}원</div><div class="stock-change ${cls}">${s.pnl>=0?'+':''}${fmt(s.curPrice-s.buyPrice)} (${fmtPct(s.returnPct)})</div></div>
+        <div class="stock-price"><div class="stock-current">${fmt(s.evalAmt)}원</div><div class="stock-change ${cls}">${s.pnl>=0?'+':''}${fmt(s.pnl)} (${fmtPct(s.returnPct)})</div></div>
       </div>
       <div class="stock-detail">
         <div class="detail-item"><div class="detail-label">매입가</div><div class="detail-value">${fmt(s.buyPrice)}</div></div>
-        <div class="detail-item"><div class="detail-label">평가금액</div><div class="detail-value">${fmt(s.evalAmt)}</div></div>
-        <div class="detail-item"><div class="detail-label">손익</div><div class="detail-value ${cls}">${s.pnl>=0?'+':''}${fmt(s.pnl)}</div></div>
+        <div class="detail-item"><div class="detail-label">현재가</div><div class="detail-value">${fmt(s.curPrice)}</div></div>
+        <div class="detail-item"><div class="detail-label">등락</div><div class="detail-value ${cls}">${s.curPrice-s.buyPrice>=0?'+':''}${fmt(s.curPrice-s.buyPrice)}</div></div>
       </div>${w52}
     </div>`;
   }).join('');
