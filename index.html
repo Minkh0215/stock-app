@@ -362,19 +362,28 @@ function showToast(msg) { const el=document.getElementById('toast'); el.textCont
 
 // ── Yahoo Finance 현재가 조회 ──────────────────────────
 async function fetchYahooPrice(ticker) {
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
-    const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    const res = await fetch(proxy);
-    const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
-    return {
-      curPrice: meta.regularMarketPrice || meta.previousClose || 0,
-      high52:   meta.fiftyTwoWeekHigh || 0,
-      low52:    meta.fiftyTwoWeekLow  || 0,
-    };
-  } catch(e) { return null; }
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  ];
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (!meta) continue;
+      const price = meta.regularMarketPrice || meta.previousClose;
+      if (!price || price <= 0) continue;
+      return {
+        curPrice: price,
+        high52:   meta.fiftyTwoWeekHigh || 0,
+        low52:    meta.fiftyTwoWeekLow  || 0,
+      };
+    } catch(e) { continue; }
+  }
+  return null;
 }
 
 function toYahooTicker(code, market) {
@@ -427,22 +436,24 @@ async function loadData() {
       baseStocks.map(s => fetchYahooPrice(toYahooTicker(s.code, s.market)))
     );
 
-    // 3. 데이터 합치기
+    // 3. 데이터 합치기 (실패 시 이전 값 유지)
     stocks = baseStocks.map((s, i) => {
       const p = priceResults[i];
-      const curPrice = p?.curPrice || 0;
-      const evalAmt  = curPrice * s.qty;
-      const pnl      = evalAmt - s.buyAmt;
+      const prev = stocks.find(x => x.code === s.code);
+
+      // 가격 실패 or 0이면 이전 값 유지, 이전 값도 없으면 매입가로 대체
+      const curPrice = (p?.curPrice > 0)   ? p.curPrice
+                     : (prev?.curPrice > 0) ? prev.curPrice
+                     : s.buyPrice;
+      const high52   = (p?.high52 > 0)     ? p.high52
+                     : (prev?.high52 > 0)  ? prev.high52 : 0;
+      const low52    = (p?.low52 > 0)      ? p.low52
+                     : (prev?.low52 > 0)   ? prev.low52  : 0;
+
+      const evalAmt   = curPrice * s.qty;
+      const pnl       = evalAmt - s.buyAmt;
       const returnPct = s.buyAmt > 0 ? (pnl / s.buyAmt) * 100 : 0;
-      return {
-        ...s,
-        curPrice,
-        evalAmt,
-        pnl,
-        returnPct,
-        high52: p?.high52 || 0,
-        low52:  p?.low52  || 0,
-      };
+      return { ...s, curPrice, evalAmt, pnl, returnPct, high52, low52 };
     });
 
     renderAll();
@@ -461,13 +472,13 @@ async function loadData() {
   btn.classList.remove('spinning');
 }
 
-// ── 1분 자동 새로고침 ────────────────────────────────────
+// ── 10분 자동 새로고침 ───────────────────────────────────
 let autoRefreshTimer = null;
 function startAutoRefresh() {
   if (autoRefreshTimer) clearInterval(autoRefreshTimer);
   autoRefreshTimer = setInterval(() => {
     if (SHEET_ID && !document.hidden) loadData();
-  }, 60 * 1000);
+  }, 10 * 60 * 1000);
 }
 
 // 탭 숨겨지면 멈추고, 다시 보이면 즉시 업데이트
