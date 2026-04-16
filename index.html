@@ -724,7 +724,36 @@ function toYahooTicker(code, market) {
   const m = String(market).trim().toUpperCase();
   if (m === 'KRX' || m === 'KOSPI') return c.padStart(6,'0') + '.KS';
   if (m === 'KOSDAQ')               return c.padStart(6,'0') + '.KQ';
-  return c;
+  // 해외주식: NASDAQ:INTC → INTC, INTC → INTC
+  return c.includes(':') ? c.split(':')[1] : c;
+}
+
+function isOverseas(market) {
+  const m = String(market).trim().toUpperCase();
+  return !['KRX','KOSPI','KOSDAQ'].includes(m);
+}
+
+// 달러 환율 가져오기 (Yahoo Finance)
+let usdKrwRate = 0;
+async function fetchUsdKrw() {
+  try {
+    const url = 'https://query1.finance.yahoo.com/v8/finance/chart/USDKRW=X?interval=1d&range=1d';
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    ];
+    for (const proxy of proxies) {
+      try {
+        const res  = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const meta = data?.chart?.result?.[0]?.meta;
+        const rate = meta?.regularMarketPrice || meta?.previousClose;
+        if (rate && rate > 0) { usdKrwRate = rate; return rate; }
+      } catch(e) { continue; }
+    }
+  } catch(e) {}
+  return usdKrwRate || 1300; // 실패시 기본값
 }
 
 // ── 구글 시트에서 기본 데이터만 로드 ────────────────────
@@ -752,8 +781,8 @@ async function loadData() {
       const r = rows[i].c;
       const name = r[0]?.v;
       if (!name) continue;
-      const showFlag = r[12]?.v;  // M열 표시 여부
-      if (showFlag !== null && showFlag !== undefined && String(showFlag).toUpperCase() !== 'Y') continue;
+      const showFlag = r[12]?.v;  // M열 표시 여부 (Y만 표시, 빈칸/N은 숨김)
+      if (!showFlag || String(showFlag).toUpperCase() !== 'Y') continue;
       const code = String(r[1]?.v ?? '');
       const market = r[2]?.v ?? '';
       baseStocks.push({
@@ -766,24 +795,31 @@ async function loadData() {
       });
     }
 
-    // 2. Yahoo Finance에서 현재가 조회
+    // 2. 환율 가져오기 (해외주식 있을 때만)
+    const hasOverseas = baseStocks.some(s => isOverseas(s.market));
+    if (hasOverseas) await fetchUsdKrw();
+
+    // 3. Yahoo Finance에서 현재가 조회
     const priceResults = await Promise.all(
       baseStocks.map(s => fetchYahooPrice(toYahooTicker(s.code, s.market)))
     );
 
-    // 3. 데이터 합치기 (실패 시 이전 값 유지)
+    // 4. 데이터 합치기 (실패 시 이전 값 유지)
     stocks = baseStocks.map((s, i) => {
       const p = priceResults[i];
       const prev = stocks.find(x => x.code === s.code);
+      const overseas = isOverseas(s.market);
+      const fxRate   = overseas ? (usdKrwRate || 1300) : 1;
 
       // 가격 실패 or 0이면 이전 값 유지, 이전 값도 없으면 매입가로 대체
-      const curPrice = (p?.curPrice > 0)   ? p.curPrice
+      const rawPrice = (p?.curPrice > 0) ? p.curPrice * fxRate : 0;
+      const curPrice = rawPrice > 0       ? rawPrice
                      : (prev?.curPrice > 0) ? prev.curPrice
                      : s.buyPrice;
-      const high52   = (p?.high52 > 0)     ? p.high52
-                     : (prev?.high52 > 0)  ? prev.high52 : 0;
-      const low52    = (p?.low52 > 0)      ? p.low52
-                     : (prev?.low52 > 0)   ? prev.low52  : 0;
+      const high52   = (p?.high52 > 0)   ? p.high52 * fxRate
+                     : (prev?.high52 > 0) ? prev.high52 : 0;
+      const low52    = (p?.low52 > 0)    ? p.low52 * fxRate
+                     : (prev?.low52 > 0) ? prev.low52  : 0;
 
       const evalAmt   = curPrice * s.qty;
       const pnl       = evalAmt - s.buyAmt;
