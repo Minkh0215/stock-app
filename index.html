@@ -215,6 +215,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 </div>
 
 <div class="page" id="page-holdings">
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+    <button class="filter-btn active" id="sort-default" onclick="sortHoldings('default')">기본</button>
+    <button class="filter-btn" id="sort-return" onclick="sortHoldings('return')">수익률순</button>
+    <button class="filter-btn" id="sort-eval" onclick="sortHoldings('eval')">평가금액순</button>
+    <button class="filter-btn" id="sort-pnl" onclick="sortHoldings('pnl')">손익순</button>
+  </div>
   <div id="holdingsList"></div>
 </div>
 
@@ -329,10 +335,26 @@ function renderBar() {
   });
 }
 
+let holdingSort = 'default';
+
+function sortHoldings(mode) {
+  holdingSort = mode;
+  document.querySelectorAll('[id^="sort-"]').forEach(b => {
+    b.classList.toggle('active', b.id === 'sort-' + mode);
+  });
+  renderHoldings();
+}
+
 function renderHoldings() {
   const el = document.getElementById('holdingsList');
   if (!stocks.length) { el.innerHTML=`<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">데이터가 없어요<br>새로고침을 눌러주세요</div></div>`; return; }
-  el.innerHTML = stocks.map(s => {
+
+  let sorted = [...stocks];
+  if (holdingSort === 'return') sorted.sort((a,b) => b.returnPct - a.returnPct);
+  else if (holdingSort === 'eval') sorted.sort((a,b) => b.evalAmt - a.evalAmt);
+  else if (holdingSort === 'pnl')  sorted.sort((a,b) => b.pnl - a.pnl);
+
+  el.innerHTML = sorted.map(s => {
     const cls = s.pnl>0?'up':s.pnl<0?'down':'neutral';
     const cardCls = s.pnl>0?'up-card':s.pnl<0?'down-card':'neutral-card';
     let w52 = '';
