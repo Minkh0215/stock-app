@@ -752,6 +752,8 @@ async function loadData() {
       const r = rows[i].c;
       const name = r[0]?.v;
       if (!name) continue;
+      const showFlag = r[12]?.v;  // M열 표시 여부
+      if (showFlag !== null && showFlag !== undefined && String(showFlag).toUpperCase() !== 'Y') continue;
       const code = String(r[1]?.v ?? '');
       const market = r[2]?.v ?? '';
       baseStocks.push({
