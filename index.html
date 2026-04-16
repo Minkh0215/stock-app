@@ -206,6 +206,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div class="chart-title">월별 거래 손익 (원)</div>
     <div class="chart-wrap"><canvas id="monthlyChart"></canvas></div>
   </div>
+  <div class="chart-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="chart-title" style="margin-bottom:0">자산 변동 추이</div>
+      <div style="display:flex;gap:6px;">
+        <button class="filter-btn active" id="assetBtn-month" onclick="switchAssetChart('month')" style="padding:4px 10px;font-size:11px;">월별</button>
+        <button class="filter-btn" id="assetBtn-year" onclick="switchAssetChart('year')" style="padding:4px 10px;font-size:11px;">연도별</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="assetChart"></canvas></div>
+  </div>
 </div>
 
 <div class="page" id="page-holdings">
@@ -232,7 +242,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 let stocks = [];
 let trades = [];
 let tradeFilter = '전체';
-let pieChartInst = null, barChartInst = null, monthlyChartInst = null;
+let pieChartInst = null, barChartInst = null, monthlyChartInst = null, assetChartInst = null;
 let SHEET_ID = '', SHEET_NAME = '';
 
 // 저장된 설정 불러오기
@@ -348,6 +358,118 @@ function renderHoldings() {
   }).join('');
 }
 
+
+
+// ── 자산 변동 그래프 ──────────────────────────────────────
+function switchAssetChart(mode) {
+  document.getElementById('assetBtn-month').classList.toggle('active', mode === 'month');
+  document.getElementById('assetBtn-year').classList.toggle('active', mode === 'year');
+  renderAssetChart(mode);
+}
+
+function renderAssetChart(mode) {
+  const ctx = document.getElementById('assetChart');
+  if (!ctx) return;
+
+  // 총자산 기록된 데이터만
+  const withAsset = monthlyData.filter(m => m.totalAsset > 0);
+  if (!withAsset.length) return;
+
+  let labels, assetVals, buyVals;
+
+  if (mode === 'month') {
+    // 월별
+    labels    = withAsset.map(m => m.month);
+    assetVals = withAsset.map(m => m.totalAsset);
+    // 누적 투자금 = 전체 데이터 기준으로 해당 월까지 매수-매도 누적
+    let cumInvest = 0;
+    const investMap = {};
+    [...monthlyData].sort((a,b)=>a.month.localeCompare(b.month)).forEach(m => {
+      cumInvest += m.buy - m.sell;
+      investMap[m.month] = cumInvest;
+    });
+    buyVals = withAsset.map(m => investMap[m.month] || 0);
+
+  } else {
+    // 연도별 - 각 연도 마지막 달 총자산
+    const yearMap = {};
+    withAsset.forEach(m => {
+      const yr = m.month.slice(0,4);
+      yearMap[yr] = m.totalAsset; // 같은 연도면 뒤 값으로 덮어씌움 (마지막 달)
+    });
+    // 누적 투자금도 연도별
+    const yearInvest = {};
+    let cumInvest = 0;
+    [...monthlyData].sort((a,b)=>a.month.localeCompare(b.month)).forEach(m => {
+      cumInvest += m.buy - m.sell;
+      const yr = m.month.slice(0,4);
+      yearInvest[yr] = cumInvest;
+    });
+    labels    = Object.keys(yearMap).sort();
+    assetVals = labels.map(y => yearMap[y]);
+    buyVals   = labels.map(y => yearInvest[y] || 0);
+  }
+
+  if (assetChartInst) assetChartInst.destroy();
+
+  assetChartInst = new Chart(ctx.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '총 자산',
+          data: assetVals,
+          borderColor: '#a78bfa',
+          backgroundColor: 'rgba(167,139,250,0.12)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#a78bfa',
+          pointRadius: 4,
+          tension: 0.3,
+          fill: true,
+        },
+        {
+          label: '누적 투자금',
+          data: buyVals,
+          borderColor: '#6c63ff',
+          backgroundColor: 'rgba(108,99,255,0.06)',
+          borderWidth: 2,
+          pointBackgroundColor: '#6c63ff',
+          pointRadius: 3,
+          tension: 0.3,
+          borderDash: [5,3],
+          fill: false,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#6b6b8a', font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const v = c.raw;
+              const unit = v >= 100000000 ? (v/100000000).toFixed(2)+'억' : (v/10000).toFixed(0)+'만원';
+              return ` ${c.dataset.label}: ${unit}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#6b6b8a', font: { size: 10 } }, grid: { display: false } },
+        y: {
+          ticks: {
+            color: '#6b6b8a', font: { size: 10 },
+            callback: v => v >= 100000000 ? (v/100000000).toFixed(1)+'억' : (v/10000).toFixed(0)+'만'
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        }
+      }
+    }
+  });
+}
 
 // ── 거래내역 시트 로드 ────────────────────────────────────
 async function loadTrades() {
@@ -517,14 +639,16 @@ async function loadMonthly() {
       const mon  = r[0]?.v;
       if (!mon) continue;
       monthlyData.push({
-        month:  String(mon).slice(0, 7),
-        buy:    Number(r[1]?.v) || 0,
-        sell:   Number(r[2]?.v) || 0,
-        pnl:    Number(r[3]?.v) || 0,
-        count:  Number(r[4]?.v) || 0,
+        month:       String(mon).slice(0, 7),
+        buy:         Number(r[1]?.v) || 0,
+        sell:        Number(r[2]?.v) || 0,
+        pnl:         Number(r[3]?.v) || 0,
+        count:       Number(r[4]?.v) || 0,
+        totalAsset:  Number(r[5]?.v) || 0,
       });
     }
     renderMonthlyChart();
+    renderAssetChart('month');
   } catch(e) { console.log('월별요약 로드 실패', e); }
 }
 
