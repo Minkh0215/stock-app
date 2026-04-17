@@ -112,7 +112,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .info-row:last-child{border-bottom:none;}
 .info-label{font-size:13px;color:var(--muted);}
 .info-value{font-size:13px;font-family:var(--mono);font-weight:500;}
-.filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;}
+.re-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:10px;position:relative;overflow:hidden;}
+.re-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px;background:#f59e0b;}
+.re-name{font-size:15px;font-weight:600;margin-bottom:2px;}
+.re-addr{font-size:11px;color:var(--muted);margin-bottom:10px;}
+.re-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.re-type{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(245,158,11,0.15);color:#f59e0b;margin-right:6px;}
+.re-pnl-area{text-align:right;}
+.re-price{font-size:17px;font-weight:700;font-family:var(--mono);}
+.re-change{font-size:12px;font-family:var(--mono);}
+.re-detail{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.re-detail-item .detail-label{font-size:10px;color:var(--muted);margin-bottom:2px;}
+.re-detail-item .detail-value{font-size:12px;font-weight:600;font-family:var(--mono);}
+.filter-btn{padding:6px 14px;.filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;}
 .filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .filter-select{padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;outline:none;}
 .trade-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:8px;}
@@ -175,14 +187,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div class="tab" onclick="switchTab('holdings')">보유종목</div>
   <div class="tab" onclick="switchTab('trades')">거래내역</div>
   <div class="tab" onclick="switchTab('summary')">요약정보</div>
+  <div class="tab" onclick="switchTab('realestate')">부동산</div>
 </div>
 
 <div class="page active" id="page-dashboard">
   <div class="error-banner" id="errorBanner"></div>
   <div class="summary-grid">
     <div class="summary-card accent-card full">
-      <div class="card-label">총 평가금액</div>
-      <div class="card-value big" id="totalValue">―</div>
+      <div class="card-label">총 자산 (주식 + 부동산)</div>
+      <div class="card-value big" id="totalAssetAll">―</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">부동산 자산</div>
+      <div class="card-value" id="realEstateValue">―</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">주식 자산</div>
+      <div class="card-value" id="totalValue">―</div>
       <div class="card-sub" id="totalReturn">―</div>
     </div>
     <div class="summary-card">
@@ -224,6 +245,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div id="holdingsList"></div>
 </div>
 
+<div class="page" id="page-realestate">
+  <div id="realEstateList"></div>
+</div>
+
 <div class="page" id="page-trades">
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <button class="filter-btn active" onclick="filterTrades('전체')">전체</button>
@@ -243,6 +268,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <script>
 let stocks = [];
 let trades = [];
+let realEstates = [];
 let tradeFilter = '전체';
 let pieChartInst = null, barChartInst = null, assetChartInst = null;
 let SHEET_ID = '', SHEET_NAME = '';
@@ -290,20 +316,25 @@ function fmtPct(n) {
   return sign + Number(n).toFixed(2) + '%';
 }
 
-function renderAll() { renderDashboard(); renderHoldings(); renderSummary(); renderTrades(); }
+function renderAll() { renderDashboard(); renderHoldings(); renderSummary(); renderTrades(); renderRealEstate(); }
 
 function renderDashboard() {
-  const totalCost  = stocks.reduce((s,x) => s + x.buyAmt, 0);
-  const totalValue = stocks.reduce((s,x) => s + x.evalAmt, 0);
-  const totalPnl   = totalValue - totalCost;
-  const totalPct   = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-  document.getElementById('totalValue').textContent = fmt(totalValue) + '원';
+  const totalCost    = stocks.reduce((s,x) => s + x.buyAmt, 0);
+  const stockValue   = stocks.reduce((s,x) => s + x.evalAmt, 0);
+  const totalPnl     = stockValue - totalCost;
+  const totalPct     = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  const reValue      = realEstates.reduce((s,x) => s + x.curPrice, 0);
+  const totalAll     = stockValue + reValue;
+
+  document.getElementById('totalAssetAll').textContent = fmt(totalAll) + '원';
+  document.getElementById('realEstateValue').textContent = fmt(reValue) + '원';
+  document.getElementById('totalValue').textContent = fmt(stockValue) + '원';
   document.getElementById('totalCost').textContent  = fmt(totalCost) + '원';
   const pnlEl = document.getElementById('totalPnl');
   pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + fmt(totalPnl) + '원';
   pnlEl.className = 'card-value ' + (totalPnl >= 0 ? 'up' : 'down');
   const retEl = document.getElementById('totalReturn');
-  retEl.textContent = fmtPct(totalPct) + '  총 수익률';
+  retEl.textContent = fmtPct(totalPct) + '  주식 수익률';
   retEl.className = 'card-sub ' + (totalPct >= 0 ? 'up' : 'down');
   renderPie(); renderBar();
 }
@@ -393,12 +424,16 @@ function renderAssetChart(mode) {
   const withAsset = monthlyData.filter(m => m.totalAsset > 0);
   if (!withAsset.length) return;
 
+  // 현재 부동산 자산 (입력값 없으면 0)
+  const reTotal = realEstates.reduce((s,x) => s + x.curPrice, 0);
+
   let labels, assetVals, buyVals;
 
   if (mode === 'month') {
     // 월별
     labels    = withAsset.map(m => m.month);
-    assetVals = withAsset.map(m => m.totalAsset);
+    // 부동산 자산이 있으면 합산, 없으면 주식만
+    assetVals = withAsset.map(m => reTotal > 0 ? m.totalAsset + reTotal : m.totalAsset);
     // 누적 투자금 = 전체 데이터 기준으로 해당 월까지 매수-매도 누적
     let cumInvest = 0;
     const investMap = {};
@@ -424,7 +459,7 @@ function renderAssetChart(mode) {
       yearInvest[yr] = cumInvest;
     });
     labels    = Object.keys(yearMap).sort();
-    assetVals = labels.map(y => yearMap[y]);
+    assetVals = labels.map(y => reTotal > 0 ? yearMap[y] + reTotal : yearMap[y]);
     buyVals   = labels.map(y => yearInvest[y] || 0);
   }
 
@@ -436,7 +471,7 @@ function renderAssetChart(mode) {
       labels,
       datasets: [
         {
-          label: '총 자산',
+          label: reTotal > 0 ? '총 자산 (주식+부동산)' : '총 자산 (주식)',
           data: assetVals,
           borderColor: '#a78bfa',
           backgroundColor: 'rgba(167,139,250,0.12)',
@@ -669,6 +704,88 @@ async function loadMonthly() {
 }
 
 
+
+// ── 부동산 데이터 로드 ────────────────────────────────────
+async function loadRealEstate() {
+  if (!SHEET_ID) return;
+  const URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('Real estate')}&t=${Date.now()}`;
+  try {
+    const res  = await fetch(URL);
+    const text = await res.text();
+    const json = JSON.parse(
+      text.replace(/^\/\*[\s\S]*?\*\/\s*/, '')
+          .replace(/^google\.visualization\.Query\.setResponse\(/, '')
+          .replace(/\);?\s*$/, '')
+    );
+    const rows = json.table.rows || [];
+    realEstates = [];
+    for (const row of rows) {
+      const r = row.c;
+      const name = r[1]?.v;
+      if (!name) continue;
+      const showFlag = r[10]?.v;
+      if (!showFlag || String(showFlag).toUpperCase() !== 'Y') continue;
+      realEstates.push({
+        type:       r[0]?.v  || '',
+        name,
+        addr:       r[2]?.v  || '',
+        buyPrice:   Number(r[3]?.v) || 0,
+        curPrice:   Number(r[4]?.v) || 0,
+        deposit:    Number(r[5]?.v) || 0,
+        monthly:    Number(r[6]?.v) || 0,
+        pnl:        Number(r[7]?.v) || 0,
+        returnPct:  Number(r[8]?.v) || 0,
+        monthlyYield: Number(r[9]?.v) || 0,
+      });
+    }
+    renderRealEstate();
+    renderDashboard();
+  } catch(e) { console.log('부동산 로드 실패', e); }
+}
+
+// ── 부동산 렌더링 ─────────────────────────────────────────
+function renderRealEstate() {
+  const el = document.getElementById('realEstateList');
+  if (!el) return;
+
+  if (!realEstates.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏠</div><div class="empty-text">부동산 데이터가 없어요<br>구글 시트 Real estate 탭에 입력 후<br>K열에 Y를 입력해주세요</div></div>`;
+    return;
+  }
+
+  el.innerHTML = realEstates.map(r => {
+    const pnlCls  = r.pnl >= 0 ? 'up' : 'down';
+    const pnlSign = r.pnl >= 0 ? '+' : '';
+    return `<div class="re-card">
+      <div class="re-row">
+        <div>
+          <span class="re-type">${r.type}</span>
+          <div class="re-name">${r.name}</div>
+          <div class="re-addr">${r.addr}</div>
+        </div>
+        <div class="re-pnl-area">
+          <div class="re-price">${fmt(r.curPrice)}원</div>
+          <div class="re-change ${pnlCls}">${pnlSign}${fmt(r.pnl)} (${r.returnPct.toFixed(1)}%)</div>
+        </div>
+      </div>
+      <div class="re-detail">
+        <div class="re-detail-item">
+          <div class="detail-label">취득가</div>
+          <div class="detail-value">${fmt(r.buyPrice)}원</div>
+        </div>
+        <div class="re-detail-item">
+          <div class="detail-label">보증금</div>
+          <div class="detail-value">${r.deposit > 0 ? fmt(r.deposit)+'원' : '―'}</div>
+        </div>
+        <div class="re-detail-item">
+          <div class="detail-label">월세 / 연수익률</div>
+          <div class="detail-value">${r.monthly > 0 ? fmt(r.monthly)+'원 / '+r.monthlyYield.toFixed(1)+'%' : '―'}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderSummary() {
   const el = document.getElementById('summaryList');
   if (!stocks.length) { el.innerHTML=`<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">데이터가 없어요</div></div>`; return; }
@@ -706,7 +823,7 @@ function renderSummary() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i) => { t.classList.toggle('active', ['dashboard','holdings','trades','summary'][i]===tab); });
+  document.querySelectorAll('.tab').forEach((t,i) => { t.classList.toggle('active', ['dashboard','holdings','trades','summary','realestate'][i]===tab); });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-'+tab).classList.add('active');
 }
@@ -857,6 +974,7 @@ async function loadData() {
     if (stocks.length > 0) showToast('업데이트 완료 ✓');
     loadTrades();
     loadMonthly();
+    loadRealEstate();
 
   } catch(e) {
     const banner = document.getElementById('errorBanner');
